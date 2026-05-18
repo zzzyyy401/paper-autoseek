@@ -5,6 +5,8 @@ import time
 import requests
 import json
 import re
+import random
+
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
@@ -16,7 +18,6 @@ NOTION_TOKEN = os.getenv("NOTION_TOKEN")
 NOTION_DATABASE_ID = os.getenv("NOTION_DATABASE_ID")
 NOTION_REPORT_DB_ID = os.getenv("NOTION_REPORT_DB_ID")
 
-# 建议改名，不要再叫 DASHSCOPE_API_KEY
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 
 # DeepSeek API
@@ -77,35 +78,55 @@ SUMMARY_ACADEMIC_PROMPT = """
 """
 
 # =========================================================
-# 工具函数
+# 通用工具
 # =========================================================
 
 def clean_text(text):
-    """
-    清洗文本，避免特殊字符影响 API
-    """
 
     text = text.replace("\n", " ")
+
     text = re.sub(r"\s+", " ", text)
 
     return text.strip()
 
 
+def random_sleep(min_sec=3, max_sec=8):
+
+    sleep_time = random.uniform(min_sec, max_sec)
+
+    print(f"休眠 {sleep_time:.1f} 秒...")
+
+    time.sleep(sleep_time)
+
+
+# =========================================================
+# Requests Retry Session
+# =========================================================
+
 def build_request_session():
-    """
-    构建带 retry 的 requests session
-    """
 
     session = requests.Session()
 
     retry_strategy = Retry(
+
         total=5,
+
         backoff_factor=2,
-        status_forcelist=[429, 500, 502, 503, 504],
+
+        status_forcelist=[
+            429,
+            500,
+            502,
+            503,
+            504
+        ],
+
         allowed_methods=["POST"]
     )
 
-    adapter = HTTPAdapter(max_retries=retry_strategy)
+    adapter = HTTPAdapter(
+        max_retries=retry_strategy
+    )
 
     session.mount("https://", adapter)
 
@@ -121,40 +142,59 @@ session = build_request_session()
 def call_ai_api(prompt_text):
 
     if not DEEPSEEK_API_KEY:
+
         print("缺少 DEEPSEEK_API_KEY")
+
         return None
 
     payload = {
+
         "model": MODEL_NAME,
+
         "messages": [
             {
                 "role": "user",
                 "content": prompt_text
             }
         ],
+
         "temperature": 0.1
     }
 
-    try:
+    for retry in range(5):
 
-        response = session.post(
-            API_URL,
-            headers=HEADERS,
-            json=payload,
-            timeout=60
-        )
+        try:
 
-        response.raise_for_status()
+            response = session.post(
+                API_URL,
+                headers=HEADERS,
+                json=payload,
+                timeout=60
+            )
 
-        result = response.json()
+            response.raise_for_status()
 
-        return result["choices"][0]["message"]["content"]
+            result = response.json()
 
-    except Exception as e:
+            # DeepSeek 限流保护
+            random_sleep(5, 10)
 
-        print(f"AI 调用失败: {e}")
+            return result["choices"][0]["message"]["content"]
 
-        return None
+        except Exception as e:
+
+            wait_time = (retry + 1) * 10
+
+            print(f"""
+AI 调用失败:
+{e}
+
+{wait_time} 秒后重试...
+""")
+
+            time.sleep(wait_time)
+
+    return None
 
 # =========================================================
 # arXiv 抓取
@@ -164,19 +204,25 @@ def fetch_vla_papers():
 
     print("===== 开始抓取最新 VLA / Embodied AI 论文 =====")
 
-    # 工业级 retry
+    all_papers = []
+
     for retry in range(5):
 
         try:
 
+            # 官方建议：
+            # 不要高频请求
             client = arxiv.Client(
-                page_size=10,
-                delay_seconds=3,
+
+                page_size=5,
+
+                delay_seconds=10,
+
                 num_retries=5
             )
 
-            # 更合理的 query
             search = arxiv.Search(
+
                 query='''
                 cat:cs.RO AND (
                     abs:"vision language action"
@@ -186,28 +232,65 @@ def fetch_vla_papers():
                     OR abs:"world model"
                 )
                 ''',
+
                 max_results=10,
+
                 sort_by=arxiv.SortCriterion.SubmittedDate
             )
 
-            papers = list(client.results(search))
+            # 不要 list(results)
+            for idx, paper in enumerate(client.results(search)):
 
-            print(f"===== 成功获取 {len(papers)} 篇论文 =====")
+                try:
 
-            return papers
+                    print(f"""
+==================================================
+[{idx+1}/10]
+
+标题:
+{paper.title}
+==================================================
+""")
+
+                    all_papers.append(paper)
+
+                    # 核心限流
+                    random_sleep(8, 15)
+
+                except Exception as e:
+
+                    print(f"单篇论文处理失败: {e}")
+
+                    continue
+
+            print(f"""
+===== 抓取完成 =====
+成功获取 {len(all_papers)} 篇论文
+""")
+
+            return all_papers
 
         except Exception as e:
 
-            print(f"第 {retry+1} 次 arXiv 抓取失败: {e}")
+            wait_time = (retry + 1) * 20
 
-            time.sleep(10)
+            print(f"""
+===== arXiv 抓取失败 =====
+
+错误:
+{e}
+
+{wait_time} 秒后重试...
+""")
+
+            time.sleep(wait_time)
 
     print("===== arXiv 连续失败 =====")
 
     return []
 
 # =========================================================
-# Notion 工具
+# Notion 去重
 # =========================================================
 
 def check_paper_exists(title):
@@ -215,7 +298,9 @@ def check_paper_exists(title):
     try:
 
         result = notion.databases.query(
+
             database_id=NOTION_DATABASE_ID,
+
             filter={
                 "property": "Name",
                 "title": {
@@ -245,13 +330,14 @@ def extract_ai_tags(abstract):
     result = call_ai_api(prompt)
 
     if not result:
+
         return []
 
     try:
 
         result = result.strip()
 
-        # 防止 AI 输出 markdown
+        # 去掉 markdown
         result = result.replace("```json", "")
         result = result.replace("```", "")
 
@@ -269,8 +355,11 @@ def extract_ai_tags(abstract):
         all_tags = list(set(all_tags))
 
         return [
+
             {"name": tag[:100]}
+
             for tag in all_tags
+
             if tag.strip()
         ]
 
@@ -293,12 +382,13 @@ def get_academic_summary(abstract):
     result = call_ai_api(prompt)
 
     if not result:
+
         return "AI 总结生成失败"
 
     return result[:1800]
 
 # =========================================================
-# 写入论文
+# 写入论文到 Notion
 # =========================================================
 
 def write_paper_to_notion(paper):
@@ -307,9 +397,10 @@ def write_paper_to_notion(paper):
 
         title = clean_text(paper.title)
 
-        authors = ", ".join(
-            [author.name for author in paper.authors]
-        )
+        authors = ", ".join([
+            author.name
+            for author in paper.authors
+        ])
 
         abstract = clean_text(paper.summary)
 
@@ -322,9 +413,15 @@ def write_paper_to_notion(paper):
 
             return
 
-        print(f"[处理中] {title}")
+        print(f"""
+==================================================
+开始处理论文:
 
-        # AI
+{title}
+==================================================
+""")
+
+        # AI 分析
         tags = extract_ai_tags(abstract)
 
         summary = get_academic_summary(abstract)
@@ -397,11 +494,15 @@ def write_paper_to_notion(paper):
         print(f"[完成] {title}")
 
         # Notion 限流保护
-        time.sleep(2)
+        random_sleep(3, 6)
 
     except Exception as e:
 
-        print(f"写入论文失败: {e}")
+        print(f"""
+写入论文失败:
+
+{e}
+""")
 
 # =========================================================
 # 生成日报
@@ -409,7 +510,11 @@ def write_paper_to_notion(paper):
 
 def create_daily_research_report(papers):
 
-    print("===== 开始生成每日学术日报 =====")
+    print("""
+==================================================
+开始生成每日学术日报
+==================================================
+""")
 
     total_content = ""
 
@@ -421,7 +526,9 @@ def create_daily_research_report(papers):
 
         total_content += f"""
 【论文 {idx+1}】
-标题：{title}
+
+标题：
+{title}
 
 摘要：
 {abstract[:500]}
@@ -448,6 +555,7 @@ def create_daily_research_report(papers):
     report = call_ai_api(report_prompt)
 
     if not report:
+
         report = "今日日报生成失败"
 
     report = report[:1800]
@@ -462,7 +570,7 @@ def create_daily_research_report(papers):
 
             properties={
 
-                # 这里必须与你数据库列名完全一致
+                # 必须与你数据库字段名一致
                 "Name": {
                     "title": [
                         {
@@ -473,14 +581,12 @@ def create_daily_research_report(papers):
                     ]
                 },
 
-                # 注意字段名
                 "Date": {
                     "date": {
                         "start": time.strftime("%Y-%m-%d")
                     }
                 },
 
-                # 注意字段名
                 "Content": {
                     "rich_text": [
                         {
@@ -493,11 +599,19 @@ def create_daily_research_report(papers):
             }
         )
 
-        print("===== 学术日报写入成功 =====")
+        print("""
+==================================================
+学术日报写入成功
+==================================================
+""")
 
     except Exception as e:
 
-        print(f"日报写入失败: {e}")
+        print(f"""
+日报写入失败:
+
+{e}
+""")
 
 # =========================================================
 # 主入口
@@ -505,7 +619,14 @@ def create_daily_research_report(papers):
 
 if __name__ == "__main__":
 
-    print("===== VLA 学术助手启动 =====")
+    print("""
+==================================================
+VLA 学术助手启动
+==================================================
+""")
+
+    # 启动前缓冲
+    random_sleep(5, 10)
 
     papers = fetch_vla_papers()
 
@@ -515,10 +636,25 @@ if __name__ == "__main__":
 
         exit()
 
-    for paper in papers:
+    # 每篇论文处理
+    for idx, paper in enumerate(papers):
+
+        print(f"""
+==================================================
+开始处理第 {idx+1} 篇论文
+==================================================
+""")
 
         write_paper_to_notion(paper)
 
+        # 每篇论文之间额外限流
+        random_sleep(10, 20)
+
+    # 生成日报
     create_daily_research_report(papers)
 
-    print("===== 全部执行完成 =====")
+    print("""
+==================================================
+全部执行完成
+==================================================
+""")
