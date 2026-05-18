@@ -38,25 +38,15 @@ notion = Client(auth=NOTION_TOKEN)
 # =========================================================
 
 TAG_EXTRACT_PROMPT = """
-你是一个严格的JSON生成器。
-你必须只输出严格合法的JSON。
-禁止任何解释文字。
-禁止任何markdown格式。
-禁止使用```json代码块。
-禁止在JSON前后添加任何内容。
-禁止使用中文标点符号。
+你现在只能输出关键词。
+不要任何标点符号。
+不要任何引号。
+不要任何解释。
+不要任何格式。
+不要换行。
+只输出5-15个关键词，用空格分隔。
 
-请从以下论文摘要中提取关键词，按以下五个维度分类，每个维度1-5个：
-- 核心任务
-- 方法范式
-- 关键模块/机制
-- 实验场景/平台
-- 评价维度
-
-输出格式：
-{"核心任务":[],"方法范式":[],"关键模块/机制":[],"实验场景/平台":[],"评价维度":[]}
-
-论文摘要：
+从以下论文摘要中提取最核心的学术关键词：
 {abstract_content}
 """
 
@@ -328,28 +318,27 @@ def extract_ai_tags(abstract):
         if not result:
             return []
 
-        # 最简单的解析：直接找所有双引号之间的内容，完全放弃JSON结构
-        # 这样不管AI返回什么格式，都能提取到关键词
-        tags = re.findall(r'"([^"]{2,30})"', result)
+        print(f"AI返回的关键词: {repr(result)}")
+
+        # 终极清理：去掉所有非中文、非英文、非数字的字符
+        cleaned = re.sub(r"[^\u4e00-\u9fa5a-zA-Z0-9\s]", "", result)
         
-        # 过滤掉无效标签
+        # 按空格分割
+        tags = cleaned.split()
+        
         valid_tags = []
         for tag in tags:
             tag = tag.strip()
-            if not tag:
-                continue
-            if tag in ["核心任务", "方法范式", "关键模块/机制", "实验场景/平台", "评价维度"]:
-                continue
-            if len(tag) > 100:
+            # 过滤掉太短和太长的标签
+            if len(tag) < 2 or len(tag) > 50:
                 continue
             valid_tags.append({"name": tag})
         
-        # 去重并返回前20个
-        return list({v["name"]: v for v in valid_tags}.values())[:20]
+        # 去重并返回前15个
+        return list({v["name"]: v for v in valid_tags}.values())[:15]
 
     except Exception as e:
         print(f"标签提取跳过：{e}")
-        # 任何错误都返回空列表，绝对不影响论文写入
         return []
 # =========================================================
 # AI 总结
@@ -374,28 +363,105 @@ def get_academic_summary(abstract):
 # =========================================================
 
 def write_paper_to_notion(paper):
-
     try:
-
         title = clean_text(paper.title)
-
         authors = ", ".join([
             author.name
             for author in paper.authors
         ])
-
         abstract = clean_text(paper.summary)
-
         pdf_url = paper.pdf_url
 
         # 去重
         if check_paper_exists(title):
-
             print(f"[跳过] 已存在: {title}")
-
             return
 
         print(f"""
+==================================================
+开始处理论文:
+
+{title}
+==================================================
+""")
+
+        # AI 分析
+        tags = extract_ai_tags(abstract)
+        summary = get_academic_summary(abstract)
+
+        # 严格遵守Notion长度限制（留100字符余量）
+        MAX_RICH_TEXT_LENGTH = 1900
+
+        # 写入 Notion
+        notion.pages.create(
+            parent={
+                "database_id": NOTION_DATABASE_ID
+            },
+            properties={
+                "Name": {
+                    "title": [
+                        {
+                            "text": {
+                                "content": title[:200]  # 标题最多200字符
+                            }
+                        }
+                    ]
+                },
+                "Authors": {
+                    "rich_text": [
+                        {
+                            "text": {
+                                "content": authors[:MAX_RICH_TEXT_LENGTH]
+                            }
+                        }
+                    ]
+                },
+                "Abstract": {
+                    "rich_text": [
+                        {
+                            "text": {
+                                "content": abstract[:MAX_RICH_TEXT_LENGTH]
+                            }
+                        }
+                    ]
+                },
+                "PDF Link": {
+                    "url": pdf_url
+                },
+                "Status": {
+                    "select": {
+                        "name": "To Read"
+                    }
+                },
+                "Tags": {
+                    "multi_select": tags if tags else []
+                },
+                "Summary": {
+                    "rich_text": [
+                        {
+                            "text": {
+                                "content": summary[:MAX_RICH_TEXT_LENGTH]
+                            }
+                        }
+                    ]
+                }
+            }
+        )
+
+        print(f"[完成] {title}")
+        print(f"提取到的标签: {[t['name'] for t in tags]}")
+
+        # Notion 限流保护
+        random_sleep(3, 6)
+
+    except Exception as e:
+        print(f"""
+写入论文失败:
+
+{e}
+""")
+        # 即使写入失败，也继续处理下一篇
+        return
 ==================================================
 开始处理论文:
 
@@ -540,7 +606,7 @@ def create_daily_research_report(papers):
 
         report = "今日日报生成失败"
 
-    report = report[:1800]
+    report = report[:1900]
 
     try:
 
