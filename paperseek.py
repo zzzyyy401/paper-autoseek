@@ -12,12 +12,12 @@ NOTION_REPORT_DB_ID = os.getenv("NOTION_REPORT_DB_ID")
 DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY")
 
 # AI接口基础配置
-API_URL = "https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation"
+API_URL = "https://api.deepseek.com"
 HEADERS = {
     "Authorization": f"Bearer {DASHSCOPE_API_KEY}",
     "Content-Type": "application/json"
 }
-MODEL_NAME = "qwen-turbo"
+MODEL_NAME = "deepseek-v4-flash"
 
 # ====================== 自定义学术Prompt ======================
 # 1. 五维关键词提取Prompt
