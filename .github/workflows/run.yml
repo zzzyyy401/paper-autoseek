@@ -15,7 +15,7 @@ jobs:
       - name: 安装项目依赖
         run: pip install -r requirements.txt
       - name: 执行论文抓取与AI解析脚本
-        run: python paperseek.py
+        run: python -u paperseek.py
         env:
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
           NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
