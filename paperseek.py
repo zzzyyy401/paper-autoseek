@@ -1,33 +1,39 @@
 import arxiv
 from notion_client import Client
 import os
+import time
 
-# ====================== 【只需要改这2个参数】 ======================
-NOTION_TOKEN = os.getenv("ntn_b68428829798UcYIW1WiKnjIKew43U6rMEkq8umPx7I5xQ")
-NOTION_DATABASE_ID = os.getenv("364197de1ba38070b0d5fb513ac70ec2")
-# ==================================================================
+# ====================== 配置 ======================
+NOTION_TOKEN = os.getenv("NOTION_TOKEN")
+NOTION_DATABASE_ID = os.getenv("NOTION_DATABASE_ID")
+# ==================================================
 
-# 连接 Notion
 notion = Client(auth=NOTION_TOKEN)
 
-# 搜索 arXiv 论文
+# 获取最新论文（修复 429 + 新版写法）
 def get_latest_papers():
     print("开始爬取最新 VLA 论文...")
+    
+    client = arxiv.Client()
     search = arxiv.Search(
-        query="cat:cs.RO AND (Vision-Language-Action OR VLA)",
-        max_results=5,
+        query="Vision-Language-Action OR VLA",
+        max_results=3,
         sort_by=arxiv.SortCriterion.SubmittedDate
     )
-    return list(search.results())
 
-# 判断论文是否已经存在
+    # 新版调用方式，不会触发 429
+    results = list(client.results(search))
+    time.sleep(1)
+    return results
+
+# 判断论文是否已存在 Notion
 def is_paper_exist(title):
     try:
-        response = notion.databases.query(
+        res = notion.databases.query(
             database_id=NOTION_DATABASE_ID,
             filter={"property": "Name", "title": {"equals": title}}
         )
-        return len(response["results"]) > 0
+        return len(res["results"]) > 0
     except:
         return False
 
@@ -39,10 +45,10 @@ def add_to_notion(paper):
     url = paper.pdf_url
 
     if is_paper_exist(title):
-        print(f"已存在：{title}")
+        print(f"✅ 已存在：{title}")
         return
 
-    print(f"添加论文：{title}")
+    print(f"📝 添加论文：{title}")
 
     notion.pages.create(
         parent={"database_id": NOTION_DATABASE_ID},
