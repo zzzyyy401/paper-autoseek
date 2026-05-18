@@ -229,7 +229,7 @@ def fetch_vla_papers():
                 )
                 ''',
 
-                max_results=10,
+                max_results=5,
 
                 sort_by=arxiv.SortCriterion.SubmittedDate
             )
