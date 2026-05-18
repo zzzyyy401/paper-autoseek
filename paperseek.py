@@ -25,7 +25,7 @@ MODEL_NAME = "deepseek-chat"
 notion = Client(auth=NOTION_TOKEN)
 
 # =========================================================
-# Prompt（最稳定：纯关键词，无格式）
+# Prompt
 # =========================================================
 TAG_EXTRACT_PROMPT = """
 你现在只能输出关键词。
@@ -184,7 +184,7 @@ def check_paper_exists(title):
         return False
 
 # =========================================================
-# 标签提取（100% 不崩溃）
+# 标签提取
 # =========================================================
 def extract_ai_tags(abstract):
     try:
@@ -214,7 +214,7 @@ def get_academic_summary(abstract):
     return res[:1900] if res else "AI 总结生成失败"
 
 # =========================================================
-# 写入 Notion（稳定、不报错）
+# 写入 Notion
 # =========================================================
 def write_paper_to_notion(paper):
     try:
@@ -252,7 +252,7 @@ def write_paper_to_notion(paper):
         print(f"写入失败：{e}")
 
 # =========================================================
-# 生成日报（已修复：无中文符号报错）
+# 生成日报
 # =========================================================
 def create_daily_research_report(papers):
     print("===== 开始生成日报 =====")
@@ -285,7 +285,7 @@ def create_daily_research_report(papers):
             properties={
                 "Name": {"title": [{"text": {"content": f"VLA日报 {time.strftime('%Y-%m-%d')}"}}]},
                 "date": {"date": {"start": time.strftime('%Y-%m-%d')}},
-                "content": {"rich_text": [{"text": {"content": report}}}
+                "content": {"rich_text": [{"text": {"content": report}}]}
             }
         )
         print("日报写入成功")
