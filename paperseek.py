@@ -215,3 +215,6 @@ if __name__ == "__main__":
     # 全部写入完成后生成日报
     create_daily_research_report(all_papers)
     print("===== 今日论文抓取+AI解析+入库全部执行完毕 =====")
+    db_info = notion.databases.retrieve(NOTION_REPORT_DB_ID)
+
+print(db_info["properties"].keys())
