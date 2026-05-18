@@ -121,36 +121,37 @@ def call_ai_api(prompt_text):
 # 每天抓取不同论文（核心修复）
 # =========================================================
 def fetch_vla_papers():
-    print("===== 开始每日论文抓取 =====")
-    all_papers = []
-
-    today = datetime.today()
-    day = today.day
-    random.seed(day)  # 每天固定种子，保证当天5篇一样，隔天不一样
+    print("===== 开始抓取每日最新 5 篇论文 =====")
+    target = 5
+    new_papers = []
 
     try:
         client = arxiv.Client(
             page_size=50,
-            delay_seconds=5,
-            num_retries=3
+            delay_seconds=3,
+            num_retries=2
         )
 
+        # 只查最新的 100 篇（足够找到 5 篇新的了）
         search = arxiv.Search(
             query='cat:cs.RO AND (vision language action OR embodied ai OR robot learning OR world model)',
-            max_results=50,
+            max_results=100,  # 只扫描最新100篇，绝对安全
             sort_by=arxiv.SortCriterion.SubmittedDate
         )
 
-        papers = list(client.results(search))
-        random.shuffle(papers)
-        papers = papers[:5]
+        # 从最新开始检查，找到 5 篇新的就停
+        for paper in client.results(search):
+            title = clean_text(paper.title)
+            
+            if not check_paper_exists(title):
+                new_papers.append(paper)
+                print(f"[{len(new_papers)}/{target}] 新论文：{title}")
 
-        for idx, paper in enumerate(papers):
-            print(f"[{idx+1}/5] {paper.title}")
-            all_papers.append(paper)
+                if len(new_papers) >= target:
+                    break
 
-        print(f"抓取完成，共 {len(all_papers)} 篇")
-        return all_papers
+        print(f"\n今日获取完成：共 {len(new_papers)} 篇全新最新论文")
+        return new_papers
 
     except Exception as e:
         print(f"抓取失败：{e}")
