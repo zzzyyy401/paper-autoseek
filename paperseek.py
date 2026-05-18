@@ -38,21 +38,23 @@ notion = Client(auth=NOTION_TOKEN)
 # =========================================================
 
 TAG_EXTRACT_PROMPT = """
-你是一位专注于具身智能（Embodied AI）、视觉-语言-动作模型（VLA）、世界模型（World Models）及机器人学领域的资深学术分析师。
+你是一个严格的JSON生成器。
+你必须只输出严格合法的JSON。
+禁止任何解释文字。
+禁止任何markdown格式。
+禁止使用```json代码块。
+禁止在JSON前后添加任何内容。
+禁止使用中文标点符号。
 
-请仔细阅读以下论文摘要，并从中系统性地提炼关键词。
+请从以下论文摘要中提取关键词，按以下五个维度分类，每个维度1-5个：
+- 核心任务
+- 方法范式
+- 关键模块/机制
+- 实验场景/平台
+- 评价维度
 
-输出要求：
-仅输出 JSON，不允许任何解释。
-
-格式：
-{
-  "核心任务": [],
-  "方法范式": [],
-  "关键模块/机制": [],
-  "实验场景/平台": [],
-  "评价维度": []
-}
+输出格式：
+{"核心任务":[],"方法范式":[],"关键模块/机制":[],"实验场景/平台":[],"评价维度":[]}
 
 论文摘要：
 {abstract_content}
@@ -326,34 +328,57 @@ def extract_ai_tags(abstract):
         return []
 
     try:
-        result = result.strip()
+        # 第一步：彻底清理所有格式垃圾
+        cleaned = result.strip()
         
-        # 彻底清理所有可能的格式问题
-        result = result.lstrip()  # 去掉开头所有空白字符（换行、空格、制表符）
-        result = result.replace("```json", "")
-        result = result.replace("```", "")
-        result = result.strip()
-
-        # 尝试解析JSON
-        data = json.loads(result)
-
+        # 去掉所有markdown代码块标记
+        cleaned = re.sub(r"```.*?\n", "", cleaned, flags=re.DOTALL)
+        cleaned = cleaned.replace("```", "")
+        
+        # 替换所有中文标点为英文标点（最容易忽略的坑）
+        cleaned = cleaned.replace("：", ":")
+        cleaned = cleaned.replace("，", ",")
+        cleaned = cleaned.replace("“", "\"")
+        cleaned = cleaned.replace("”", "\"")
+        cleaned = cleaned.replace("‘", "'")
+        cleaned = cleaned.replace("’", "'")
+        
+        # 第二步：正则提取最外层的JSON对象
+        # 这个正则会匹配从第一个{到最后一个}的所有内容
+        match = re.search(r"\{[\s\S]*\}", cleaned)
+        
+        if not match:
+            print(f"未找到合法JSON，原始返回：{repr(cleaned)}")
+            return []
+            
+        json_str = match.group(1) if match.groups() else match.group()
+        
+        # 第三步：尝试解析JSON
+        data = json.loads(json_str)
+        
+        # 第四步：安全提取标签
         all_tags = []
         for value in data.values():
             if isinstance(value, list):
-                all_tags.extend(value)
-
-        # 去重并截断过长标签
-        all_tags = list(set(all_tags))
-        return [
-            {"name": tag[:100]}
-            for tag in all_tags
-            if tag.strip()
-        ]
+                for tag in value:
+                    if tag is None:
+                        continue
+                    tag_str = str(tag).strip()
+                    if tag_str and len(tag_str) <= 100:
+                        all_tags.append(tag_str)
+        
+        # 去重并转换为Notion格式
+        unique_tags = list(set(all_tags))
+        valid_tags = [{"name": tag} for tag in unique_tags]
+        
+        # Notion限制最多20个标签
+        return valid_tags[:20]
 
     except Exception as e:
-        print(f"标签解析失败: {e}")
-        print(f"AI返回的原始内容: {repr(result)}")
-        return []  # 解析失败返回空标签，不影响论文写入
+        print(f"标签解析彻底失败：{e}")
+        print(f"原始返回内容：{repr(result)}")
+        # 解析失败返回空列表，不影响论文写入
+        return []
 
 # =========================================================
 # AI 总结
