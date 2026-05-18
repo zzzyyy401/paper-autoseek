@@ -6,6 +6,7 @@ import requests
 import json
 import re
 import random
+from datetime import datetime
 
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -25,7 +26,7 @@ MODEL_NAME = "deepseek-chat"
 notion = Client(auth=NOTION_TOKEN)
 
 # =========================================================
-# Prompt
+# Prompt（超级精简版）
 # =========================================================
 TAG_EXTRACT_PROMPT = """
 你现在只能输出关键词。
@@ -41,18 +42,8 @@ TAG_EXTRACT_PROMPT = """
 """
 
 SUMMARY_ACADEMIC_PROMPT = """
-你是一位深耕具身智能、VLA、世界模型与机器人学的研究者。
-
-请根据论文摘要生成专业学术总结。
-
-要求：
-1. 问题与动机
-2. 核心方法
-3. 关键创新
-4. 实验验证
-5. 局限与启示
-
-输出 Markdown。
+请用极简方式总结论文，控制在3句话以内：
+论文解决什么问题 → 用了什么方法 → 结论是什么
 
 论文摘要：
 {abstract_content}
@@ -66,7 +57,7 @@ def clean_text(text):
     text = re.sub(r"\s+", " ", text)
     return text.strip()
 
-def random_sleep(min_sec=3, max_sec=8):
+def random_sleep(min_sec=3, max_sec=6):
     sleep_time = random.uniform(min_sec, max_sec)
     print(f"休眠 {sleep_time:.1f} 秒...")
     time.sleep(sleep_time)
@@ -77,8 +68,8 @@ def random_sleep(min_sec=3, max_sec=8):
 def build_request_session():
     session = requests.Session()
     retry_strategy = Retry(
-        total=5,
-        backoff_factor=2,
+        total=3,
+        backoff_factor=1,
         status_forcelist=[429, 500, 502, 503, 504],
         allowed_methods=["POST"]
     )
@@ -103,7 +94,7 @@ def call_ai_api(prompt_text):
         "temperature": 0.1
     }
 
-    for retry in range(5):
+    for retry in range(3):
         try:
             res = session.post(
                 API_URL,
@@ -112,63 +103,58 @@ def call_ai_api(prompt_text):
                     "Content-Type": "application/json"
                 },
                 json=payload,
-                timeout=60
+                timeout=30
             )
             res.raise_for_status()
             result = res.json()
-            random_sleep(5, 10)
+            random_sleep(2, 4)
             return result["choices"][0]["message"]["content"]
 
         except Exception as e:
-            wait = (retry + 1) * 10
+            wait = (retry + 1) * 5
             print(f"AI 调用失败，{wait} 秒后重试：{e}")
             time.sleep(wait)
 
     return None
 
 # =========================================================
-# 抓取论文
+# 每天抓取不同论文（核心修复）
 # =========================================================
 def fetch_vla_papers():
-    print("===== 开始抓取论文 =====")
+    print("===== 开始每日论文抓取 =====")
     all_papers = []
 
-    for retry in range(5):
-        try:
-            client = arxiv.Client(
-                page_size=5,
-                delay_seconds=10,
-                num_retries=5
-            )
-            search = arxiv.Search(
-                query='''
-                cat:cs.RO AND (
-                    abs:"vision language action"
-                    OR abs:"embodied ai"
-                    OR abs:"robot learning"
-                    OR abs:"diffusion policy"
-                    OR abs:"world model"
-                )
-                ''',
-                max_results=5,
-                sort_by=arxiv.SortCriterion.SubmittedDate
-            )
+    today = datetime.today()
+    day = today.day
+    random.seed(day)  # 每天固定种子，保证当天5篇一样，隔天不一样
 
-            for idx, paper in enumerate(client.results(search)):
-                print(f"[{idx+1}/5] {paper.title}")
-                all_papers.append(paper)
-                random_sleep(8, 15)
+    try:
+        client = arxiv.Client(
+            page_size=50,
+            delay_seconds=5,
+            num_retries=3
+        )
 
-            print(f"抓取完成，共 {len(all_papers)} 篇")
-            return all_papers
+        search = arxiv.Search(
+            query='cat:cs.RO AND (vision language action OR embodied ai OR robot learning OR world model)',
+            max_results=50,
+            sort_by=arxiv.SortCriterion.SubmittedDate
+        )
 
-        except Exception as e:
-            wait = (retry + 1) * 20
-            print(f"抓取失败，{wait} 秒后重试：{e}")
-            time.sleep(wait)
+        papers = list(client.results(search))
+        random.shuffle(papers)
+        papers = papers[:5]
 
-    print("arXiv 连续失败")
-    return []
+        for idx, paper in enumerate(papers):
+            print(f"[{idx+1}/5] {paper.title}")
+            all_papers.append(paper)
+
+        print(f"抓取完成，共 {len(all_papers)} 篇")
+        return all_papers
+
+    except Exception as e:
+        print(f"抓取失败：{e}")
+        return []
 
 # =========================================================
 # Notion 去重
@@ -198,20 +184,20 @@ def extract_ai_tags(abstract):
 
         for t in tags:
             t = t.strip()
-            if 2 <= len(t) <= 50:
+            if 2 <= len(t) <= 40:
                 valid.append({"name": t})
 
-        return list({v["name"]: v for v in valid}.values())[:15]
+        return list({v["name"]: v for v in valid}.values())[:10]
 
     except:
         return []
 
 # =========================================================
-# 总结生成
+# 极简总结
 # =========================================================
 def get_academic_summary(abstract):
     res = call_ai_api(SUMMARY_ACADEMIC_PROMPT.format(abstract_content=abstract))
-    return res[:1900] if res else "AI 总结生成失败"
+    return res[:500] if res else "总结失败"
 
 # =========================================================
 # 写入 Notion
@@ -231,7 +217,7 @@ def write_paper_to_notion(paper):
         tags = extract_ai_tags(abstract)
         summary = get_academic_summary(abstract)
 
-        MAX = 1900
+        MAX = 800
 
         notion.pages.create(
             parent={"database_id": NOTION_DATABASE_ID},
@@ -242,20 +228,20 @@ def write_paper_to_notion(paper):
                 "PDF Link": {"url": pdf_url},
                 "Status": {"select": {"name": "To Read"}},
                 "Tags": {"multi_select": tags if tags else []},
-                "Summary": {"rich_text": [{"text": {"content": summary[:MAX]}}]}
+                "Summary": {"rich_text": [{"text": {"content": summary[:500]}}]}
             }
         )
         print(f"[完成] {title}")
-        random_sleep(3, 6)
+        random_sleep(2, 4)
 
     except Exception as e:
         print(f"写入失败：{e}")
 
 # =========================================================
-# 生成日报
+# 生成极简日报（超级短）
 # =========================================================
 def create_daily_research_report(papers):
-    print("===== 开始生成日报 =====")
+    print("===== 生成极简日报 =====")
     if not NOTION_REPORT_DB_ID:
         print("未配置日报数据库")
         return
@@ -263,29 +249,25 @@ def create_daily_research_report(papers):
     content = ""
     for idx, p in enumerate(papers):
         title = clean_text(p.title)
-        abstract = clean_text(p.summary)
-        content += f"\n[论文 {idx+1}]\n标题：{title}\n摘要：{abstract[:500]}\n"
+        content += f"[{idx+1}] {title}\n"
 
     prompt = f"""
-请基于最新论文总结：
-1. 研究热点
-2. 技术趋势
-3. 创新方向
-4. 未来发展
+今天论文列表：
+{content}
 
-论文：{content}
+请用100字内极简总结今日主题与趋势。
 """
 
     report = call_ai_api(prompt) or "日报生成失败"
-    report = report[:1900]
+    report = report[:300]
 
     try:
         notion.pages.create(
             parent={"database_id": NOTION_REPORT_DB_ID},
             properties={
                 "Name": {"title": [{"text": {"content": f"VLA日报 {time.strftime('%Y-%m-%d')}"}}]},
-                "date": {"date": {"start": time.strftime('%Y-%m-%d')}},
-                "content": {"rich_text": [{"text": {"content": report}}]}
+                "Date": {"date": {"start": time.strftime('%Y-%m-%d')}},
+                "Content": {"rich_text": [{"text": {"content": report}}]}
             }
         )
         print("日报写入成功")
@@ -296,8 +278,7 @@ def create_daily_research_report(papers):
 # 主程序
 # =========================================================
 if __name__ == "__main__":
-    print("===== VLA 学术助手启动 =====")
-    random_sleep(2, 4)
+    print("===== VLA 每日论文助手 =====")
     papers = fetch_vla_papers()
 
     if not papers:
@@ -306,7 +287,7 @@ if __name__ == "__main__":
 
     for paper in papers:
         write_paper_to_notion(paper)
-        random_sleep(10, 15)
+        random_sleep(5, 8)
 
     create_daily_research_report(papers)
-    print("===== 全部执行完成 =====")
+    print("===== 执行完成 =====")
