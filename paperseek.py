@@ -102,7 +102,7 @@ def check_paper_exists(title):
     try:
         res = notion.databases.query(
             database_id=NOTION_DATABASE_ID,
-            filter={"property": "名称", "title": {"equals": title}}
+            filter={"property": "Name", "title": {"equals": title}}
         )
         return len(res["results"]) > 0
     except Exception as e:
@@ -183,12 +183,16 @@ def write_paper_to_notion(paper):
     # 写入延时，避免频繁调用Notion接口
     time.sleep(1)
 
-# 7. 生成每日领域论文汇总日报
+## 7. 生成每日领域论文汇总日报
 def create_daily_research_report(papers):
+    # 缩进 4 格 ✅
     print("=== 开始生成每日VLA领域研究日报 ===")
     total_content = ""
+    # 缩进 4 格 ✅
     for idx, p in enumerate(papers):
+        # 再缩进 4 格 ✅
         total_content += f"【论文{idx+1}】{p.title}\n{p.summary[:400]}......\n\n"
+    
     report_prompt = f"基于以下今日最新10篇具身智能与VLA领域论文摘要，汇总今日领域研究热点、主流技术趋势、创新方向与未来发展趋势，输出简洁学术日报：\n{total_content}"
     daily_report = call_ai_api(report_prompt) or "今日论文汇总生成失败"
 
