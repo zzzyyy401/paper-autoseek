@@ -1,23 +1,23 @@
-name: 每日自动爬论文
-
+name: VLA论文自动抓取&AI学术解析
 on:
+  workflow_dispatch:
   schedule:
-    - cron: "0 0 * * *"  # 每天 UTC 0 点 = 北京时间 8 点
-  workflow_dispatch:     # 可以手动点击运行
-
+    - cron: "0 0 * * *"
 jobs:
-  run:
+  auto_run:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Python
+      - name: 配置Python3.11
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Install dependencies
+      - name: 安装项目依赖
         run: pip install -r requirements.txt
-      - name: Run script
+      - name: 执行论文抓取与AI解析脚本
+        run: python paperseek.py
         env:
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
           NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
-        run: python paperseek.py
+          NOTION_REPORT_DB_ID: ${{ secrets.NOTION_REPORT_DB_ID }}
+          DASHSCOPE_API_KEY: ${{ secrets.DASHSCOPE_API_KEY }}
