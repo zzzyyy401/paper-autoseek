@@ -1,2 +1,3 @@
 arxiv==2.1.3
 notion-client==2.2.1
+requests>=2.31.0
