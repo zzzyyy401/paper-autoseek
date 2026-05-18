@@ -334,33 +334,55 @@ def extract_ai_tags(abstract):
         # 去掉所有markdown代码块标记
         cleaned = re.sub(r"```.*?\n", "", cleaned, flags=re.DOTALL)
         cleaned = cleaned.replace("```", "")
+        cleaned = cleaned.replace("`", "")
         
-        # 替换所有中文标点为英文标点（最容易忽略的坑）
+        # 替换所有中文标点为英文标点
         cleaned = cleaned.replace("：", ":")
         cleaned = cleaned.replace("，", ",")
         cleaned = cleaned.replace("“", "\"")
         cleaned = cleaned.replace("”", "\"")
         cleaned = cleaned.replace("‘", "'")
         cleaned = cleaned.replace("’", "'")
-        
-        # 第二步：正则提取最外层的JSON对象
-        # 这个正则会匹配从第一个{到最后一个}的所有内容
-        match = re.search(r"\{[\s\S]*\}", cleaned)
-        
-        if not match:
-            print(f"未找到合法JSON，原始返回：{repr(cleaned)}")
-            return []
-            
-        json_str = match.group(1) if match.groups() else match.group()
-        
-        # 第三步：尝试解析JSON
-        data = json.loads(json_str)
+
+        # ==============================================
+        # 🎯 核心修改：手动暴力提取JSON（解决所有不完整问题）
+        # ==============================================
+        # 1. 找到第一个{和最后一个}的位置
+        start = cleaned.find("{")
+        end = cleaned.rfind("}")
+
+        # 2. 如果找不到{，直接从第一个"开始，强制加上{
+        if start == -1:
+            first_quote = cleaned.find('"')
+            if first_quote != -1:
+                json_str = "{" + cleaned[first_quote:]
+            else:
+                print("未找到任何JSON特征")
+                return []
+        else:
+            # 3. 如果找到了{，截取从{到最后一个}的内容
+            if end == -1:
+                json_str = cleaned[start:]
+            else:
+                json_str = cleaned[start:end+1]
+
+        # 4. 强制补全结尾的}（如果缺少）
+        if json_str.count("{") > json_str.count("}"):
+            json_str += "}" * (json_str.count("{") - json_str.count("}"))
+
+        print(f"最终提取的JSON: {repr(json_str)}")
+
+        # 5. 使用raw_decode解析，忽略后面的垃圾内容
+        decoder = json.JSONDecoder()
+        data, _ = decoder.raw_decode(json_str)
         
         # 第四步：安全提取标签
         all_tags = []
-        for value in data.values():
-            if isinstance(value, list):
-                for tag in value:
+        expected_keys = ["核心任务", "方法范式", "关键模块/机制", "实验场景/平台", "评价维度"]
+        
+        for key in expected_keys:
+            if key in data and isinstance(data[key], list):
+                for tag in data[key]:
                     if tag is None:
                         continue
                     tag_str = str(tag).strip()
@@ -377,7 +399,7 @@ def extract_ai_tags(abstract):
     except Exception as e:
         print(f"标签解析彻底失败：{e}")
         print(f"原始返回内容：{repr(result)}")
-        # 解析失败返回空列表，不影响论文写入
+        # 解析失败返回空列表，绝对不影响论文写入
         return []
 
 # =========================================================
