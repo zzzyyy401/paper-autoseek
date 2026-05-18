@@ -1,7 +1,7 @@
 import arxiv
 from notion_client import Client
 import os
-import time
+import time  # 用来加延迟
 
 # ====================== 配置 ======================
 NOTION_TOKEN = os.getenv("NOTION_TOKEN")
@@ -10,21 +10,25 @@ NOTION_DATABASE_ID = os.getenv("NOTION_DATABASE_ID")
 
 notion = Client(auth=NOTION_TOKEN)
 
-# 获取最新论文（修复 429 + 新版写法）
+# 获取最新论文（修复 429 + 新版写法 + 延迟）
 def get_latest_papers():
     print("开始爬取最新 VLA 论文...")
-    
+
+    # 新版 arXiv 客户端
     client = arxiv.Client()
+
     search = arxiv.Search(
-        query="Vision-Language-Action OR VLA",
-        max_results=3,
+        query="cat:cs.RO AND (Vision-Language-Action OR VLA)",
+        max_results=3,  # 只爬3篇，不触发限流
         sort_by=arxiv.SortCriterion.SubmittedDate
     )
 
-    # 新版调用方式，不会触发 429
-    results = list(client.results(search))
-    time.sleep(1)
-    return results
+    # 【关键】延迟 3 秒，让 arXiv 认为你是正常访问
+    time.sleep(3)
+
+    # 新版调用方式，不会报废弃警告
+    results = client.results(search)
+    return list(results)
 
 # 判断论文是否已存在 Notion
 def is_paper_exist(title):
