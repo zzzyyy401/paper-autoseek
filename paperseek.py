@@ -33,7 +33,8 @@ TAG_EXTRACT_PROMPT = """
 - **评价维度（Metric/Concept）**：核心评价指标或贯穿论文的关键概念（如：样本效率、泛化性、长程规划、零样本迁移、sim-to-real、安全性、可解释性等）
 ### 2. 输出格式
 仅以纯结构化JSON形式输出，禁止多余解释、多余文字，便于程序直接解析：
-{"核心任务":[],"方法范式":[],"关键模块/机制":[],"实验场景/平台":[],"评价维度":[]}
+{{"核心任务":[],"方法范式":[],"关键模块/机制":[],"实验场景/平台":[],"评价维度":[]}}
+
 论文摘要内容：{abstract_content}
 """
 
@@ -44,25 +45,32 @@ SUMMARY_ACADEMIC_PROMPT = """
 **1. 问题与动机（Motivation）**
 - 论文针对具身智能中的什么核心痛点或任务缺口？
 - 现有方法（VLA/世界模型/传统控制）在此存在什么瓶颈？
+
 **2. 核心方法（Method）**
 - 提出什么新框架、新范式或关键模块？
 - 输入输出接口是什么（如：视觉+语言指令 → 末端执行器动作/关节角/路径点）？
 - 训练范式（模仿学习/强化学习/预训练+微调/零样本提示）？
+
 **3. 关键创新（Key Contribution）**
 - 与同期 VLA 或世界模型工作相比，最本质的差异化设计是什么？
 - 是否引入新的状态表征、动作 tokenization 方式、推演机制或 sim-to-real 策略？
+
 **4. 实验验证（Validation）**
 - 在什么环境/平台（仿真/真实机器人/人形机器人/多场景）验证？
 - 核心性能提升或泛化能力表现（定量结论一句话概括）？
+
 **5. 局限与启示（Limitation & Impact）**
 - 方法的主要约束（计算成本、场景假设、动作空间限制）？
 - 对领域发展的潜在启发（是否推动 VLA 规模化、世界模型可交互性、或机器人通用化）？
+
 ### 领域专属标注要求
 - **若涉及 VLA**：标注动作空间类型（离散/连续/混合）、是否端到端、是否利用预训练 VLM
 - **若涉及世界模型**：标注推演时长/范围、状态表征形式（像素/隐变量/语义）、是否支持交互编辑
 - **若涉及机器人硬件**：标注平台类型（机械臂/人形/轮式/四足）及 sim-to-real 迁移方式
+
 ### 输出格式
 使用 Markdown 结构化输出，禁止大段连续文本。语言与摘要保持一致。
+
 论文摘要：{abstract_content}
 """
 
@@ -107,13 +115,14 @@ def call_ai_api(prompt_text):
         return None
     post_data = {
         "model": MODEL_NAME,
-        "input": {"messages": [{"role": "user", "content": prompt_text}]}
+        "messages": [{"role": "user", "content": prompt_text}],
+        "temperature": 0.1
     }
     try:
-        response = requests.post(API_URL, headers=HEADERS, json=post_data, timeout=20)
+        response = requests.post(API_URL, headers=HEADERS, json=post_data, timeout=30)
         response.raise_for_status()
         result = response.json()
-        return result["output"]["choices"][0]["message"]["content"]
+        return result["choices"][0]["message"]["content"]
     except Exception as e:
         print(f"AI调用失败：{e}")
         return None
