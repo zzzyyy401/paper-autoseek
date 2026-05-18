@@ -201,8 +201,8 @@ def create_daily_research_report(papers):
         parent={"database_id": NOTION_REPORT_DB_ID},
         properties={
             "Name": {"title": [{"text": {"content": f"VLA领域每日学术日报 {time.strftime('%Y-%m-%d')}"}}]},
-            "日期": {"date": {"start": time.strftime("%Y-%m-%d")}},
-            "日报内容": {"rich_text": [{"text": {"content": daily_report[:1950]}}]}
+            "date": {"date": {"start": time.strftime("%Y-%m-%d")}},
+            "content": {"rich_text": [{"text": {"content": daily_report[:1950]}}]}
         }
     )
     print("=== 每日学术日报写入完成 ===")
