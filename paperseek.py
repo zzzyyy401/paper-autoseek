@@ -136,44 +136,41 @@ def build_request_session():
 session = build_request_session()
 
 # =========================================================
-# DeepSeek API
+# DeepSeek API（已修复：兼容 DASHSCOPE_API_KEY）
 # =========================================================
 
 def call_ai_api(prompt_text):
+    # 同时支持两个环境变量名，兼容旧配置
+    api_key = DEEPSEEK_API_KEY or os.getenv("DASHSCOPE_API_KEY")
 
-    if not DEEPSEEK_API_KEY:
-
-        print("缺少 DEEPSEEK_API_KEY")
-
+    if not api_key:
+        print("缺少 DEEPSEEK_API_KEY 或 DASHSCOPE_API_KEY")
         return None
 
     payload = {
-
         "model": MODEL_NAME,
-
         "messages": [
             {
                 "role": "user",
                 "content": prompt_text
             }
         ],
-
         "temperature": 0.1
     }
 
     for retry in range(5):
-
         try:
-
             response = session.post(
                 API_URL,
-                headers=HEADERS,
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json"
+                },
                 json=payload,
                 timeout=60
             )
 
             response.raise_for_status()
-
             result = response.json()
 
             # DeepSeek 限流保护
@@ -182,16 +179,13 @@ def call_ai_api(prompt_text):
             return result["choices"][0]["message"]["content"]
 
         except Exception as e:
-
             wait_time = (retry + 1) * 10
-
             print(f"""
 AI 调用失败:
 {e}
 
 {wait_time} 秒后重试...
 """)
-
             time.sleep(wait_time)
 
     return None
@@ -318,11 +312,10 @@ def check_paper_exists(title):
         return False
 
 # =========================================================
-# AI 标签提取
+# AI 标签提取（已修复：处理所有格式问题）
 # =========================================================
 
 def extract_ai_tags(abstract):
-
     prompt = TAG_EXTRACT_PROMPT.format(
         abstract_content=abstract
     )
@@ -330,44 +323,37 @@ def extract_ai_tags(abstract):
     result = call_ai_api(prompt)
 
     if not result:
-
         return []
 
     try:
-
         result = result.strip()
-
-        # 去掉 markdown
+        
+        # 彻底清理所有可能的格式问题
+        result = result.lstrip()  # 去掉开头所有空白字符（换行、空格、制表符）
         result = result.replace("```json", "")
         result = result.replace("```", "")
+        result = result.strip()
 
+        # 尝试解析JSON
         data = json.loads(result)
 
         all_tags = []
-
         for value in data.values():
-
             if isinstance(value, list):
-
                 all_tags.extend(value)
 
-        # 去重
+        # 去重并截断过长标签
         all_tags = list(set(all_tags))
-
         return [
-
             {"name": tag[:100]}
-
             for tag in all_tags
-
             if tag.strip()
         ]
 
     except Exception as e:
-
         print(f"标签解析失败: {e}")
-
-        return []
+        print(f"AI返回的原始内容: {repr(result)}")
+        return []  # 解析失败返回空标签，不影响论文写入
 
 # =========================================================
 # AI 总结
