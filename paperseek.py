@@ -318,90 +318,39 @@ def check_paper_exists(title):
 # =========================================================
 
 def extract_ai_tags(abstract):
-    prompt = TAG_EXTRACT_PROMPT.format(
-        abstract_content=abstract
-    )
-
-    result = call_ai_api(prompt)
-
-    if not result:
-        return []
-
     try:
-        # 第一步：彻底清理所有格式垃圾
-        cleaned = result.strip()
-        
-        # 去掉所有markdown代码块标记
-        cleaned = re.sub(r"```.*?\n", "", cleaned, flags=re.DOTALL)
-        cleaned = cleaned.replace("```", "")
-        cleaned = cleaned.replace("`", "")
-        
-        # 替换所有中文标点为英文标点
-        cleaned = cleaned.replace("：", ":")
-        cleaned = cleaned.replace("，", ",")
-        cleaned = cleaned.replace("“", "\"")
-        cleaned = cleaned.replace("”", "\"")
-        cleaned = cleaned.replace("‘", "'")
-        cleaned = cleaned.replace("’", "'")
+        prompt = TAG_EXTRACT_PROMPT.format(
+            abstract_content=abstract
+        )
 
-        # ==============================================
-        # 🎯 核心修改：手动暴力提取JSON（解决所有不完整问题）
-        # ==============================================
-        # 1. 找到第一个{和最后一个}的位置
-        start = cleaned.find("{")
-        end = cleaned.rfind("}")
+        result = call_ai_api(prompt)
 
-        # 2. 如果找不到{，直接从第一个"开始，强制加上{
-        if start == -1:
-            first_quote = cleaned.find('"')
-            if first_quote != -1:
-                json_str = "{" + cleaned[first_quote:]
-            else:
-                print("未找到任何JSON特征")
-                return []
-        else:
-            # 3. 如果找到了{，截取从{到最后一个}的内容
-            if end == -1:
-                json_str = cleaned[start:]
-            else:
-                json_str = cleaned[start:end+1]
+        if not result:
+            return []
 
-        # 4. 强制补全结尾的}（如果缺少）
-        if json_str.count("{") > json_str.count("}"):
-            json_str += "}" * (json_str.count("{") - json_str.count("}"))
-
-        print(f"最终提取的JSON: {repr(json_str)}")
-
-        # 5. 使用raw_decode解析，忽略后面的垃圾内容
-        decoder = json.JSONDecoder()
-        data, _ = decoder.raw_decode(json_str)
+        # 最简单的解析：直接找所有双引号之间的内容，完全放弃JSON结构
+        # 这样不管AI返回什么格式，都能提取到关键词
+        tags = re.findall(r'"([^"]{2,30})"', result)
         
-        # 第四步：安全提取标签
-        all_tags = []
-        expected_keys = ["核心任务", "方法范式", "关键模块/机制", "实验场景/平台", "评价维度"]
+        # 过滤掉无效标签
+        valid_tags = []
+        for tag in tags:
+            tag = tag.strip()
+            if not tag:
+                continue
+            if tag in ["核心任务", "方法范式", "关键模块/机制", "实验场景/平台", "评价维度"]:
+                continue
+            if len(tag) > 100:
+                continue
+            valid_tags.append({"name": tag})
         
-        for key in expected_keys:
-            if key in data and isinstance(data[key], list):
-                for tag in data[key]:
-                    if tag is None:
-                        continue
-                    tag_str = str(tag).strip()
-                    if tag_str and len(tag_str) <= 100:
-                        all_tags.append(tag_str)
-        
-        # 去重并转换为Notion格式
-        unique_tags = list(set(all_tags))
-        valid_tags = [{"name": tag} for tag in unique_tags]
-        
-        # Notion限制最多20个标签
-        return valid_tags[:20]
+        # 去重并返回前20个
+        return list({v["name"]: v for v in valid_tags}.values())[:20]
 
     except Exception as e:
-        print(f"标签解析彻底失败：{e}")
-        print(f"原始返回内容：{repr(result)}")
-        # 解析失败返回空列表，绝对不影响论文写入
+        print(f"标签提取跳过：{e}")
+        # 任何错误都返回空列表，绝对不影响论文写入
         return []
-
 # =========================================================
 # AI 总结
 # =========================================================
