@@ -12,7 +12,7 @@ NOTION_REPORT_DB_ID = os.getenv("NOTION_REPORT_DB_ID")
 DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY")
 
 # AI接口基础配置
-API_URL = "https://api.deepseek.com"
+API_URL = "https://api.deepseek.com/v1/chat/completions"
 HEADERS = {
     "Authorization": f"Bearer {DASHSCOPE_API_KEY}",
     "Content-Type": "application/json"
@@ -171,7 +171,7 @@ def write_paper_to_notion(paper):
     notion.pages.create(
         parent={"database_id": NOTION_DATABASE_ID},
         properties={
-            "名称": {"title": [{"text": {"content": paper_title}}]},
+            "Name": {"title": [{"text": {"content": paper_title}}]},
             "Authors": {"rich_text": [{"text": {"content": paper_authors}}]},
             "Abstract": {"rich_text": [{"text": {"content": paper_abstract[:1950]}}]},
             "PDF Link": {"url": paper_pdf_url},
@@ -196,7 +196,7 @@ def create_daily_research_report(papers):
     notion.pages.create(
         parent={"database_id": NOTION_REPORT_DB_ID},
         properties={
-            "名称": {"title": [{"text": {"content": f"VLA领域每日学术日报 {time.strftime('%Y-%m-%d')}"}}]},
+            "Name": {"title": [{"text": {"content": f"VLA领域每日学术日报 {time.strftime('%Y-%m-%d')}"}}]},
             "日期": {"date": {"start": time.strftime("%Y-%m-%d")}},
             "日报内容": {"rich_text": [{"text": {"content": daily_report[:1950]}}]}
         }
