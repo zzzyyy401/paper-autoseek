@@ -2,7 +2,7 @@ name: VLA论文自动抓取&AI学术解析
 on:
   workflow_dispatch:
   schedule:
-    - cron: "3 3 * * *"
+    - cron: "3 22 * * *"
 jobs:
   auto_run:
     runs-on: ubuntu-latest
