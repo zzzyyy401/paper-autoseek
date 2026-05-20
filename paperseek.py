@@ -134,7 +134,7 @@ def fetch_vla_papers():
 
         # 只查最新的 100 篇（足够找到 5 篇新的了）
         search = arxiv.Search(
-            query='cat:cs.RO AND ("vision language action" OR "embodied ai" OR "world model" OR VLA OR WAM)',
+            query='cat:cs.RO AND (vision language action OR embodied ai OR world model OR VLA OR WAM)',
             max_results=100,  # 只扫描最新100篇，绝对安全
             sort_by=arxiv.SortCriterion.SubmittedDate
         )
